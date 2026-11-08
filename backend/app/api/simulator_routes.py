@@ -14,7 +14,8 @@ router = APIRouter(prefix="/simulator", tags=["Advanced Demonstration Lab & Benc
 
 class ScenarioStepRequest(BaseModel):
     device_id: str
-    scenario_id: int # 1 to 12
+    scenario_id: Optional[int] = 1 # default to 1 (normal)
+    mode: Optional[str] = None     # support top toolbar 'mode'
     scenario_mode: Optional[str] = None
     engineer_approved: Optional[bool] = False
 
@@ -62,8 +63,8 @@ def run_scenario_pipeline(
         )
 
     sim = simulators[req.device_id]
-    scenario_info = SCENARIO_MAP.get(req.scenario_id, SCENARIO_MAP[1])
-    mode = req.scenario_mode or scenario_info["mode"]
+    scenario_info = SCENARIO_MAP.get(req.scenario_id or 1, SCENARIO_MAP[1])
+    mode = req.mode or req.scenario_mode or scenario_info["mode"]
 
     # 1. Pipeline Stage: Sensor Input Generation
     reading = sim.generate_reading(mode=mode)
