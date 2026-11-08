@@ -15,6 +15,8 @@ import { AlertsRecommendationsPage } from './pages/AlertsRecommendationsPage';
 import { CalibrationPassportPage } from './pages/CalibrationPassportPage';
 import { DeviceManagementPage } from './pages/DeviceManagementPage';
 import { ReportsAnalyticsPage } from './pages/ReportsAnalyticsPage';
+import { SimulationLabPage } from './pages/SimulationLabPage';
+import { BenchmarkingPage } from './pages/BenchmarkingPage';
 
 const queryClient = new QueryClient();
 
@@ -40,6 +42,8 @@ export function App() {
               <Route path="/drift-analytics" element={<ProtectedRoute><AIDriftAnalyticsPage /></ProtectedRoute>} />
               <Route path="/predictive-rul" element={<ProtectedRoute><PredictiveRULPage /></ProtectedRoute>} />
               <Route path="/calibration" element={<ProtectedRoute><SelfCalibrationPage /></ProtectedRoute>} />
+              <Route path="/simulation-lab" element={<ProtectedRoute><SimulationLabPage /></ProtectedRoute>} />
+              <Route path="/benchmarking" element={<ProtectedRoute><BenchmarkingPage /></ProtectedRoute>} />
               <Route path="/alerts" element={<ProtectedRoute><AlertsRecommendationsPage /></ProtectedRoute>} />
               <Route path="/passport" element={<ProtectedRoute><CalibrationPassportPage /></ProtectedRoute>} />
               <Route path="/devices" element={<ProtectedRoute><DeviceManagementPage /></ProtectedRoute>} />

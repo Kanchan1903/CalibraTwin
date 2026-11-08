@@ -9,6 +9,9 @@ from app.models.models import (
 from app.services.digital_twin import DigitalTwinEngine
 from app.services.drift_analytics import DriftAnalyticsService
 from app.services.rul_engine import PredictiveMaintenanceService
+from app.services.sensor_redundancy import SensorDiagnosticsEngine
+from app.services.data_quality import DataQualityEngine
+from app.services.xai_engine import ExplainableAIEngine
 
 class TelemetryService:
     def __init__(self):
@@ -23,11 +26,12 @@ class TelemetryService:
         temperature: float,
         humidity: float,
         ref_temp: float = 25.0,
-        is_simulated: bool = False
+        is_simulated: bool = False,
+        is_buffered: bool = False,
+        sequence_id: int = None
     ) -> Dict[str, Any]:
         device = db.query(Device).filter(Device.device_id == device_id).first()
         if not device:
-            # Auto-register device if unknown
             device = Device(
                 device_id=device_id,
                 name=f"Device {device_id}",
@@ -57,7 +61,7 @@ class TelemetryService:
             db.commit()
             db.refresh(twin_param)
 
-        # Run Digital Twin calculation & EKF
+        # 1. Digital Twin calculation & EKF State Estimation
         dt_engine = DigitalTwinEngine(
             offset=twin_param.offset,
             gain=twin_param.gain,
@@ -79,17 +83,43 @@ class TelemetryService:
         expected_pressure = ekf_res["expected_reading"]
         residual = digital_pressure - expected_pressure
 
-        # Check sensor agreement: digital vs analog redundant sensor
-        # Allow +/- 1.2 kPa variance between redundant channels
-        sensor_agreement = abs(digital_pressure - analog_pressure) <= 1.2
+        # Fetch recent 20 readings for cross-validation & quality analysis
+        recent_telemetries = db.query(Telemetry).filter(
+            Telemetry.device_id == device_id
+        ).order_by(Telemetry.id.desc()).limit(20).all()
 
-        # Data quality
-        if not sensor_agreement and abs(residual) > 3.0:
-            data_quality = "SUSPECT"
-        elif abs(residual) > 6.0:
-            data_quality = "INVALID"
-        else:
-            data_quality = "GOOD"
+        history_records = [
+            {
+                "digital_pressure": t.digital_pressure,
+                "analog_pressure": t.analog_pressure,
+                "timestamp": t.timestamp,
+                "residual": t.residual
+            }
+            for t in reversed(recent_telemetries)
+        ]
+
+        # 2. Sensor Redundancy & Cross-Validation
+        redundancy_res = SensorDiagnosticsEngine.cross_validate(
+            digital_p=digital_pressure,
+            analog_p=analog_pressure,
+            temp_c=temperature,
+            hum_pct=humidity,
+            history=history_records
+        )
+
+        # 3. Data Quality & Trust Score (0 - 100)
+        curr_reading_meta = {
+            "digital_pressure": digital_pressure,
+            "analog_pressure": analog_pressure,
+            "timestamp": datetime.datetime.utcnow(),
+            "residual": residual,
+            "is_buffered": is_buffered
+        }
+        quality_res = DataQualityEngine.evaluate_quality(
+            current_reading=curr_reading_meta,
+            recent_readings=history_records,
+            sensor_agreement_score=redundancy_res["sensor_agreement_score"]
+        )
 
         # Update twin param estimates
         twin_param.estimated_offset = ekf_res["estimated_offset"]
@@ -99,10 +129,20 @@ class TelemetryService:
 
         # Update device status
         device.last_seen = datetime.datetime.utcnow()
-        if abs(residual) > device.drift_critical_threshold_kpa:
+        if abs(residual) > device.drift_critical_threshold_kpa or quality_res["trust_score"] < 40.0:
             device.status = "WARNING"
+        elif not redundancy_res["sensor_agreement"]:
+            device.status = "UNDER_WATCH"
         else:
             device.status = "ONLINE"
+
+        # Determine qualitative data quality label
+        if quality_res["trust_score"] >= 75.0:
+            data_quality_label = "GOOD"
+        elif quality_res["trust_score"] >= 50.0:
+            data_quality_label = "SUSPECT"
+        else:
+            data_quality_label = "INVALID"
 
         # Save Telemetry
         telemetry = Telemetry(
@@ -115,24 +155,21 @@ class TelemetryService:
             reference_temperature=ref_temp,
             expected_pressure=round(expected_pressure, 3),
             residual=round(residual, 3),
-            sensor_agreement=sensor_agreement,
-            data_quality=data_quality,
-            health_status="GOOD" if data_quality == "GOOD" else "DEGRADED",
+            sensor_agreement=redundancy_res["sensor_agreement"],
+            data_quality=data_quality_label,
+            health_status="GOOD" if data_quality_label == "GOOD" else "DEGRADED",
             is_simulated=is_simulated
         )
         db.add(telemetry)
 
-        # Fetch recent 20 residuals for EWMA, CUSUM and Isolation Forest
-        recent_telemetries = db.query(Telemetry).filter(
-            Telemetry.device_id == device_id
-        ).order_by(Telemetry.id.desc()).limit(20).all()
-
-        residuals = [t.residual for t in reversed(recent_telemetries)] if recent_telemetries else [residual]
+        # Residual tracking for CUSUM & EWMA
+        residuals = [t["residual"] for t in history_records if t["residual"] is not None]
         residuals.append(residual)
 
         # CUSUM drift detection
-        _, _, cusum_detected = self.drift_analytics.calculate_cusum(residuals)
-        
+        s_pos, s_neg, cusum_detected = self.drift_analytics.calculate_cusum(residuals)
+        cusum_stat = max(s_pos[-1], s_neg[-1]) if s_pos else 0.0
+
         # Step changepoint
         is_step, _ = self.drift_analytics.detect_changepoint(residuals)
 
@@ -154,6 +191,20 @@ class TelemetryService:
         elif abs(residual) > device.drift_warn_threshold_kpa or cusum_detected:
             drift_status = "DRIFT_DETECTED"
 
+        # 4. Explainable AI (XAI) Diagnosis & Reasoning Generation
+        xai_explanation = ExplainableAIEngine.explain_drift_decision(
+            residual=residual,
+            cusum_detected=cusum_detected,
+            cusum_val=cusum_stat,
+            cusum_threshold=1.20,
+            ewma_slope=drift_rate,
+            dT=temperature - ref_temp,
+            dH=humidity - device.reference_humidity_pct,
+            confidence=twin_param.model_confidence,
+            classification=classification,
+            sensor_agreement=redundancy_res["sensor_agreement"]
+        )
+
         # Record Drift Event if drift detected
         if drift_status != "NORMAL":
             drift_ev = DriftEvent(
@@ -163,20 +214,20 @@ class TelemetryService:
                 drift_magnitude=round(residual, 3),
                 drift_direction="POSITIVE" if residual > 0 else "NEGATIVE",
                 drift_rate=round(drift_rate, 4),
-                detection_method="CUSUM + EWMA",
+                detection_method="CUSUM + EWMA + Digital Twin",
                 residual_classification=classification
             )
             db.add(drift_ev)
 
-            # Generate alert if critical or not logged recently
-            if drift_status == "CRITICAL_DRIFT":
+            # Generate alert if critical or step fault
+            if drift_status == "CRITICAL_DRIFT" or classification == "Fault":
                 alert = Alert(
                     device_id=device_id,
-                    alert_type="Persistent drift",
+                    alert_type="Persistent drift" if classification != "Fault" else "Sensor Fault",
                     severity="Critical",
-                    description=f"Critical sensor drift of {residual:.2f} kPa detected via CUSUM.",
-                    probable_root_cause=f"Sensor diaphragm degradation or thermal drift ({classification}).",
-                    recommended_action="Execute self-calibration or replace sensor."
+                    description=xai_explanation["detection_reason"],
+                    probable_root_cause=f"Residual classification: {classification}. Threshold crossed: {xai_explanation['threshold_crossed']}",
+                    recommended_action=xai_explanation["recommended_next_action"]
                 )
                 db.add(alert)
 
@@ -188,7 +239,6 @@ class TelemetryService:
             model_confidence=twin_param.model_confidence
         )
 
-        # Check existing RUL
         existing_rul = db.query(RulPrediction).filter(RulPrediction.device_id == device_id).first()
         if not existing_rul:
             existing_rul = RulPrediction(
@@ -210,13 +260,24 @@ class TelemetryService:
 
         db.commit()
 
+        # Digital Twin Synchronization Status
+        sync_status = "DELAYED" if is_buffered else "SYNCED"
+
         return {
             "telemetry_id": telemetry.id,
+            "device_id": device_id,
+            "timestamp": telemetry.timestamp.isoformat(),
             "digital_pressure": digital_pressure,
+            "analog_pressure": analog_pressure,
             "expected_pressure": expected_pressure,
             "residual": residual,
             "drift_status": drift_status,
             "classification": classification,
+            "sensor_diagnostics": redundancy_res,
+            "data_quality_evaluation": quality_res,
+            "xai_explanation": xai_explanation,
             "rul_days": rul_data["remaining_days"],
-            "model_confidence": twin_param.model_confidence
+            "model_confidence": twin_param.model_confidence,
+            "twin_sync_status": sync_status,
+            "is_buffered": is_buffered
         }

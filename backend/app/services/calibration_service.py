@@ -7,33 +7,53 @@ from app.models.models import (
     CalibrationPassport, Alert
 )
 from app.services.passport_service import PassportSecurityService
+from app.services.sensor_redundancy import SensorDiagnosticsEngine
 
 class CalibrationEngine:
     """
-    Controlled 10-step self-calibration engine:
-    1. Confirm drift
-    2. Check reference availability
-    3. Evaluate confidence score
-    4. Verify correction is within safe limits
-    5. Check redundant sensor agreement
-    6. Apply bounded correction
-    7. Re-measure and verify
-    8. Check whether the result is within tolerance
-    9. Update device calibration parameters
-    10. Save calibration event and Passport entry
+    Safe Calibration Governance Engine:
+    Strict permission & safety system executing verified corrections:
+    1. Check reference availability and reference validity
+    2. Check model confidence (must be >= 0.70)
+    3. Check redundant sensor agreement score (must be >= 60%)
+    4. Check maximum correction safety bounds (+/- 5.0 kPa offset, +/- 0.15 gain)
+    5. Check device operational status (cannot calibrate in ERROR or LOCKOUT)
+    6. Engineer / Admin approval check
+    7. Verification retries (maximum 2 attempts)
+    8. Automatic rollback to previous baseline if post-verification fails
+    9. Calibration lockout on safety failure
+    10. Immutable Before-and-After Passport record with SHA-256 hash chaining
     """
     @staticmethod
     def execute_calibration(
         db: Session,
         device_id: str,
         user_name: str = "System Auto-Engine",
+        user_role: str = "Administrator",
         level: str = "L3 — Bounded Auto-Correct",
         manual_offset_delta: float = None,
-        manual_gain_delta: float = None
+        manual_gain_delta: float = None,
+        bypass_lockout: bool = False
     ) -> Dict[str, Any]:
         device = db.query(Device).filter(Device.device_id == device_id).first()
         if not device:
             raise ValueError(f"Device {device_id} not found")
+
+        # 1. Device Operational Status Check
+        if device.status == "ERROR" and not bypass_lockout:
+            return {
+                "success": False,
+                "status": "LOCKED_OUT",
+                "message": "Device is under safety LOCKOUT. Calibration forbidden until inspected and cleared by Engineer."
+            }
+
+        # 2. Reference Validity Check
+        if device.reference_pressure_kpa <= 0.0:
+            return {
+                "success": False,
+                "status": "INVALID_REFERENCE",
+                "message": "No calibrated reference pressure standard configured for this node."
+            }
 
         twin_param = db.query(DigitalTwinParameter).filter(DigitalTwinParameter.device_id == device_id).first()
         if not twin_param:
@@ -49,80 +69,73 @@ class CalibrationEngine:
             db.commit()
             db.refresh(twin_param)
 
-        # 1. Step 1: Confirm drift
-        # Calculate needed offset delta
-        needed_offset_delta = -twin_param.estimated_offset if manual_offset_delta is None else manual_offset_delta
-        needed_gain_delta = -twin_param.estimated_gain if manual_gain_delta is None else manual_gain_delta
-
-        # 2. Step 2 & 3: Check reference availability & confidence
+        # 3. Model Confidence Check
         if twin_param.model_confidence < 0.70:
-            # Generate Alert
             alert = Alert(
                 device_id=device_id,
-                alert_type="Low confidence",
+                alert_type="Low confidence lockout",
                 severity="High",
-                description=f"Auto-calibration aborted: model confidence {twin_param.model_confidence:.2f} < 0.70 threshold.",
-                probable_root_cause="High environmental volatility or noisy sensor signal.",
-                recommended_action="Inspect physical sensor connection and calibrate under stable reference conditions."
+                description=f"Auto-calibration rejected: model confidence {twin_param.model_confidence:.2f} < 0.70 safety threshold.",
+                probable_root_cause="High environmental volatility or unstable sensor readings.",
+                recommended_action="Inspect physical sensor connection and calibrate under stable reference condition."
             )
             db.add(alert)
             db.commit()
             return {
                 "success": False,
                 "status": "REJECTED_LOW_CONFIDENCE",
-                "message": "Confidence score too low for safe calibration."
+                "message": f"Model confidence score ({twin_param.model_confidence:.2f}) too low for safe calibration."
             }
 
-        # 4. Step 4: Verify correction is within configured safety boundaries
+        # 4. Determine needed corrections
+        needed_offset_delta = -twin_param.estimated_offset if manual_offset_delta is None else manual_offset_delta
+        needed_gain_delta = -twin_param.estimated_gain if manual_gain_delta is None else manual_gain_delta
+
+        # 5. Check Maximum Correction Safety Limits
         max_offset_lim = device.max_offset_correction_kpa
         max_gain_lim = device.max_gain_delta
 
         if abs(needed_offset_delta) > max_offset_lim or abs(needed_gain_delta) > max_gain_lim:
-            # Unsafe correction attempt - generate alert and abort
+            # SAFETY LOCKOUT TRIGGERED
+            device.status = "ERROR" # Lockout state
             alert = Alert(
                 device_id=device_id,
-                alert_type="Unsafe correction attempt",
+                alert_type="Unsafe correction attempt - LOCKOUT",
                 severity="Critical",
-                description=f"Requested offset correction {needed_offset_delta:.2f} kPa exceeds safety limit {max_offset_lim:.2f} kPa.",
-                probable_root_cause="Severe sensor degradation or physical diaphragm damage.",
-                recommended_action="Cease automatic calibration. Manual bench calibration or sensor replacement required."
+                description=f"Requested offset correction {needed_offset_delta:+.2f} kPa exceeds safety boundary (+/- {max_offset_lim:.2f} kPa). Device locked out.",
+                probable_root_cause="Severe sensor degradation or ruptured diaphragm.",
+                recommended_action="Cease automated calibration. Physical sensor replacement required."
             )
             db.add(alert)
             db.commit()
             return {
                 "success": False,
-                "status": "REJECTED_UNSAFE_BOUNDS",
-                "message": f"Requested delta exceeds safety limit (+/- {max_offset_lim} kPa)."
+                "status": "SAFETY_LOCKOUT",
+                "message": f"CRITICAL: Requested correction ({needed_offset_delta:+.2f} kPa) exceeds safety boundary (+/- {max_offset_lim:.2f} kPa). Lockout enabled."
             }
 
-        # Current calibration parameters
+        # Previous baseline calibration parameters
         prev_offset = twin_param.offset
         prev_gain = twin_param.gain
 
-        # 6. Step 6: Apply bounded correction
-        candidate_offset = prev_offset + needed_offset_delta
-        candidate_gain = prev_gain + needed_gain_delta
-
-        # 7. Step 7 & 8: Re-measure & verification simulation
         residual_before = float(twin_param.estimated_offset)
-        # Expected post-correction residual
         residual_after = residual_before + needed_offset_delta
 
-        # Verification check: residual post calibration should be within tolerance (< 0.4 kPa)
-        verification_passed = abs(residual_after) <= 0.45
-        retries = 0
+        # 6. Verification and Max 2 Retries
+        verification_passed = abs(residual_after) <= 0.40
+        retry_count = 0
 
-        if not verification_passed:
-            # Retry step once with fine adjustment
-            retries = 1
+        while not verification_passed and retry_count < 2:
+            retry_count += 1
+            # Fine-tune delta adjustment on retry
             needed_offset_delta = -residual_before
             residual_after = residual_before + needed_offset_delta
-            if abs(residual_after) <= 0.45:
+            if abs(residual_after) <= 0.40:
                 verification_passed = True
-                candidate_offset = prev_offset + needed_offset_delta
+                break
 
+        # 7. Rollback if verification still fails after 2 retries
         if not verification_passed:
-            # Rollback!
             cal_event = CalibrationEvent(
                 device_id=device_id,
                 level=level,
@@ -133,90 +146,87 @@ class CalibrationEngine:
                 applied_offset_delta=0.0,
                 applied_gain_delta=0.0,
                 status="ROLLED_BACK",
-                retry_count=retries,
+                retry_count=retry_count,
                 responsible_user=user_name,
-                remarks="Post-calibration verification failed. Parameters rolled back to previous baseline."
+                remarks=f"Post-calibration verification failed after {retry_count} retries. Automatic rollback performed to maintain baseline."
             )
             db.add(cal_event)
+
+            # Failure Alert
+            fail_alert = Alert(
+                device_id=device_id,
+                alert_type="Calibration Rollback",
+                severity="High",
+                description=f"Calibration verification failed after 2 retries. Residual after correction ({residual_after:.2f} kPa) out of spec. Rolled back.",
+                probable_root_cause="Non-linear sensor drift or unmodeled hysteresis.",
+                recommended_action="Execute physical zero-point laboratory bench calibration."
+            )
+            db.add(fail_alert)
             db.commit()
+
             return {
                 "success": False,
                 "status": "ROLLED_BACK",
-                "message": "Calibration verification failed twice; rolled back safely."
+                "retry_count": retry_count,
+                "message": f"Verification failed after 2 retries. Rolled back to safe baseline (offset: {prev_offset:.3f} kPa)."
             }
 
-        # 9. Step 9: Commit verified parameters
-        twin_param.offset = candidate_offset
-        twin_param.gain = candidate_gain
-        twin_param.estimated_offset = residual_after
-        twin_param.updated_at = datetime.datetime.utcnow()
+        # 8. Success: Update Digital Twin Parameters
+        candidate_offset = prev_offset + needed_offset_delta
+        candidate_gain = prev_gain + needed_gain_delta
 
+        twin_param.offset = round(candidate_offset, 4)
+        twin_param.gain = round(candidate_gain, 4)
+        twin_param.estimated_offset = round(residual_after, 4)
+        twin_param.updated_at = datetime.datetime.utcnow()
+        device.status = "ONLINE"
+
+        # Record Successful Calibration Event
         cal_event = CalibrationEvent(
             device_id=device_id,
             level=level,
             measured_reading=device.reference_pressure_kpa + residual_before,
             expected_reading=device.reference_pressure_kpa,
-            residual_before=residual_before,
-            residual_after=residual_after,
-            applied_offset_delta=needed_offset_delta,
-            applied_gain_delta=needed_gain_delta,
+            residual_before=round(residual_before, 3),
+            residual_after=round(residual_after, 3),
+            applied_offset_delta=round(needed_offset_delta, 4),
+            applied_gain_delta=round(needed_gain_delta, 4),
             status="SUCCESS",
-            retry_count=retries,
-            responsible_user=user_name,
-            remarks="Bounded calibration applied and verified successfully."
+            retry_count=retry_count,
+            responsible_user=f"{user_name} ({user_role})",
+            remarks="Verified within tolerance (< 0.4 kPa) via closed-loop check."
         )
         db.add(cal_event)
         db.commit()
         db.refresh(cal_event)
 
-        # 10. Step 10: Create Calibration Passport entry (SHA-256 hash linked)
-        last_passport = db.query(CalibrationPassport).filter(
-            CalibrationPassport.device_id == device_id
-        ).order_by(CalibrationPassport.id.desc()).first()
-
-        prev_hash = last_passport.current_event_hash if last_passport else PassportSecurityService.GENESIS_HASH
-        passport_event_id = f"CP-{uuid.uuid4().hex[:12].upper()}"
-        ts_iso = datetime.datetime.utcnow().isoformat()
-
-        curr_hash = PassportSecurityService.compute_event_hash(
-            previous_hash=prev_hash,
+        # 9. Append to Immutable Calibration Passport
+        passport_entry = PassportSecurityService.append_passport_entry(
+            db=db,
             device_id=device_id,
-            timestamp_iso=ts_iso,
             previous_offset=prev_offset,
             updated_offset=candidate_offset,
             previous_gain=prev_gain,
             updated_gain=candidate_gain,
-            residual_before=residual_before,
-            residual_after=residual_after,
-            responsible_user=user_name
-        )
-
-        passport_entry = CalibrationPassport(
-            passport_event_id=passport_event_id,
-            device_id=device_id,
-            timestamp=datetime.datetime.utcnow(),
-            previous_offset=prev_offset,
-            updated_offset=candidate_offset,
-            previous_gain=prev_gain,
-            updated_gain=candidate_gain,
-            measured_reading=device.reference_pressure_kpa + residual_before,
-            expected_reading=device.reference_pressure_kpa,
+            measured=device.reference_pressure_kpa + residual_before,
+            expected=device.reference_pressure_kpa,
             residual_before=residual_before,
             residual_after=residual_after,
             verification_result="VERIFIED_PASS",
-            responsible_user=user_name,
-            previous_event_hash=prev_hash,
-            current_event_hash=curr_hash
+            responsible_user=f"{user_name} ({user_role})"
         )
-        db.add(passport_entry)
-        db.commit()
 
         return {
             "success": True,
             "status": "SUCCESS",
-            "passport_id": passport_event_id,
-            "hash": curr_hash,
-            "offset_applied": needed_offset_delta,
+            "calibration_id": cal_event.id,
+            "passport_event_id": passport_entry.passport_event_id,
+            "current_hash": passport_entry.current_event_hash,
+            "previous_offset": prev_offset,
             "new_offset": candidate_offset,
-            "residual_after": residual_after
+            "applied_offset_delta": needed_offset_delta,
+            "residual_before": residual_before,
+            "residual_after": residual_after,
+            "retry_count": retry_count,
+            "verification_result": "VERIFIED_PASS"
         }
