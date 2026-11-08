@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import type { Device } from '../types';
 import api from '../services/api';
+import { useAuth } from './AuthContext';
 
 interface DeviceContextType {
   devices: Device[];
@@ -16,6 +17,7 @@ interface DeviceContextType {
 const DeviceContext = createContext<DeviceContextType | undefined>(undefined);
 
 export const DeviceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { isAuthenticated } = useAuth();
   const [devices, setDevices] = useState<Device[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>('CALIBRA-ESP32-001');
   const [isSimulating, setIsSimulating] = useState<boolean>(true);
@@ -34,8 +36,10 @@ export const DeviceProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   useEffect(() => {
-    fetchDevices();
-  }, []);
+    if (isAuthenticated) {
+      fetchDevices();
+    }
+  }, [isAuthenticated]);
 
   // Periodic simulation ticker when active
   useEffect(() => {
