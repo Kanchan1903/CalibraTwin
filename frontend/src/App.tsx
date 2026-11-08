@@ -17,6 +17,7 @@ import { DeviceManagementPage } from './pages/DeviceManagementPage';
 import { ReportsAnalyticsPage } from './pages/ReportsAnalyticsPage';
 import { SimulationLabPage } from './pages/SimulationLabPage';
 import { BenchmarkingPage } from './pages/BenchmarkingPage';
+import { ProductionObservabilityPage } from './pages/ProductionObservabilityPage';
 
 const queryClient = new QueryClient();
 
@@ -47,6 +48,7 @@ export function App() {
               <Route path="/alerts" element={<ProtectedRoute><AlertsRecommendationsPage /></ProtectedRoute>} />
               <Route path="/passport" element={<ProtectedRoute><CalibrationPassportPage /></ProtectedRoute>} />
               <Route path="/devices" element={<ProtectedRoute><DeviceManagementPage /></ProtectedRoute>} />
+              <Route path="/observability" element={<ProtectedRoute><ProductionObservabilityPage /></ProtectedRoute>} />
               <Route path="/reports" element={<ProtectedRoute><ReportsAnalyticsPage /></ProtectedRoute>} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

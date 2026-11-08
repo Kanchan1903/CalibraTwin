@@ -22,6 +22,7 @@ from app.api.passport import router as passport_router
 from app.api.dashboard import router as dashboard_router
 from app.api.reports import router as reports_router
 from app.api.simulator_routes import router as simulator_router
+from app.api.engineering_routes import router as engineering_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("CalibraTwinApp")
@@ -168,6 +169,7 @@ app.include_router(alerts_router, prefix=settings.API_V1_STR)
 app.include_router(passport_router, prefix=settings.API_V1_STR)
 app.include_router(reports_router, prefix=settings.API_V1_STR)
 app.include_router(simulator_router, prefix=settings.API_V1_STR)
+app.include_router(engineering_router, prefix=settings.API_V1_STR)
 
 @app.get("/api/health", tags=["Health"])
 def health_check():

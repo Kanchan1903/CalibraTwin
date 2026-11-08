@@ -51,6 +51,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
     { name: 'Alerts & Incidents', path: '/alerts', icon: Bell },
     { name: 'Calibration Passport', path: '/passport', icon: ShieldCheck },
     { name: 'Device Management', path: '/devices', icon: Server },
+    { name: 'System Observability', path: '/observability', icon: Activity },
     { name: 'Reports & Exports', path: '/reports', icon: FileBarChart },
   ];
 
