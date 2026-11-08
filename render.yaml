@@ -1,5 +1,5 @@
 services:
-  # Backend Web API on Render
+  # Backend Web API on Render (using lightweight self-contained SQLite on Free Tier)
   - type: web
     name: calibratwin-backend
     env: python
@@ -10,16 +10,8 @@ services:
     startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
     envVars:
       - key: DATABASE_URL
-        fromDatabase:
-          name: calibratwin-db
-          property: connectionString
+        value: "sqlite:///./calibratwin.db"
       - key: SECRET_KEY
         generateValue: true
       - key: MQTT_ENABLED
         value: "false"
-
-databases:
-  - name: calibratwin-db
-    databaseName: calibratwin
-    user: calibratwin_user
-    plan: free
