@@ -16,7 +16,9 @@ import {
   Play,
   Pause,
   LogOut,
-  Radio
+  Radio,
+  Menu,
+  ChevronDown
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useDevice } from '../context/DeviceContext';
@@ -56,39 +58,44 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   ];
 
   return (
-    <div className="flex h-screen bg-[#F7F9FC] text-[#111827] overflow-hidden">
-      {/* Sidebar */}
-      <aside className="w-64 bg-white border-r border-[#E5E7EB] flex flex-col justify-between shadow-sm">
+    <div className="flex h-screen bg-[#F4F7FB] text-[#0F172A] overflow-hidden antialiased">
+      {/* Dark Navy Professional SCADA Sidebar */}
+      <aside className="w-64 bg-[#101B35] flex flex-col justify-between shrink-0 shadow-lg border-r border-[#1E293B]">
         <div>
-          {/* Brand header */}
-          <div className="p-4 border-b border-[#E5E7EB] flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <div className="w-8 h-8 rounded-lg bg-[#1646E8] flex items-center justify-center text-white font-bold text-lg">
-                C
+          {/* Logo Brand Header */}
+          <div className="px-5 py-4 border-b border-[#1E293B]/70 flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#2563EB] to-[#0D9488] flex items-center justify-center text-white font-bold shadow-md">
+                {/* Clean industrial pulse icon */}
+                <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
               </div>
               <div>
-                <h1 className="font-bold text-base tracking-tight text-[#111827]">CalibraTwin</h1>
-                <p className="text-[10px] uppercase font-semibold text-[#1646E8] tracking-wider">Industrial IoT & Twin</p>
+                <h1 className="font-bold text-sm tracking-tight text-white leading-tight">CalibraTwin</h1>
+                <p className="text-[10px] uppercase font-semibold text-[#0D9488] tracking-widest">Industrial IoT & Twin</p>
               </div>
             </div>
           </div>
 
-          {/* Device Selector */}
-          <div className="p-3 bg-[#EAF0FF] border-b border-[#CBD5E1]">
-            <label className="text-[11px] font-semibold text-[#123FD5] uppercase tracking-wider block mb-1">
+          {/* Device Selector on Dark Navy */}
+          <div className="p-3 mx-3 my-2 bg-[#1A284D]/70 rounded-lg border border-[#273B66]">
+            <label className="text-[10px] font-semibold text-[#94A3B8] uppercase tracking-wider block mb-1.5">
               Active Sensor Node
             </label>
-            <select
-              value={selectedDevice?.device_id || ''}
-              onChange={(e) => setSelectedDeviceId(e.target.value)}
-              className="w-full text-xs font-medium bg-white border border-[#94A3B8] rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#1646E8]"
-            >
-              {devices.map((d) => (
-                <option key={d.device_id} value={d.device_id}>
-                  {d.device_id} ({d.name})
-                </option>
-              ))}
-            </select>
+            <div className="relative">
+              <select
+                value={selectedDevice?.device_id || ''}
+                onChange={(e) => setSelectedDeviceId(e.target.value)}
+                className="w-full text-xs font-medium bg-[#101B35] text-white border border-[#334D80] rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#2563EB] cursor-pointer"
+              >
+                {devices.map((d) => (
+                  <option key={d.device_id} value={d.device_id}>
+                    {d.device_id} ({d.name})
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           {/* Navigation Links */}
@@ -100,10 +107,10 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                   key={item.path}
                   to={item.path}
                   className={({ isActive }) =>
-                    `flex items-center space-x-3 px-3 py-2 text-xs font-medium rounded-md transition-colors ${
+                    `flex items-center space-x-3 px-3 py-2 text-xs font-medium rounded-md transition-all ${
                       isActive
-                        ? 'bg-[#1646E8] text-white shadow-sm font-semibold'
-                        : 'text-gray-600 hover:bg-[#EAF0FF] hover:text-[#1646E8]'
+                        ? 'bg-[#2563EB] text-white shadow-sm font-semibold'
+                        : 'text-[#94A3B8] hover:bg-[#1A284D] hover:text-white'
                     }`
                   }
                 >
@@ -115,19 +122,26 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           </nav>
         </div>
 
-        {/* User badge & logout */}
-        <div className="p-3 border-t border-[#E5E7EB] bg-white">
+        {/* Compact User Designation / Role Section (RBAC Designation Only — No Name) */}
+        <div className="p-3 border-t border-[#1E293B] bg-[#0C152B]">
           <div className="flex items-center justify-between">
-            <div className="overflow-hidden">
-              <p className="text-xs font-semibold truncate text-[#111827]">{user?.full_name || 'Operator'}</p>
-              <span className="inline-block px-1.5 py-0.5 text-[10px] font-medium rounded bg-[#EAF0FF] text-[#1646E8]">
-                {user?.role || 'Engineer'}
-              </span>
+            <div className="flex items-center space-x-2.5 overflow-hidden">
+              <div className="w-7 h-7 rounded-md bg-[#2563EB]/20 border border-[#2563EB]/50 flex items-center justify-center text-white text-[11px] font-bold">
+                {(user?.role || 'OP').slice(0, 2).toUpperCase()}
+              </div>
+              <div className="overflow-hidden">
+                <span className="text-xs font-semibold text-white block truncate leading-tight">
+                  {user?.role || 'Operator'}
+                </span>
+                <span className="text-[10px] text-[#0D9488] font-mono tracking-wide">
+                  RBAC AUTH
+                </span>
+              </div>
             </div>
             <button
               onClick={handleLogout}
               title="Sign Out"
-              className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
+              className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-[#1E293B] rounded-md transition cursor-pointer"
             >
               <LogOut className="w-4 h-4" />
             </button>
@@ -136,64 +150,86 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
       </aside>
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Top Control Bar */}
-        <header className="h-14 bg-white border-b border-[#E5E7EB] flex items-center justify-between px-6 z-10 shadow-xs">
-          <div className="flex items-center space-x-3">
+      <div className="flex-1 flex flex-col overflow-hidden bg-[#F4F7FB]">
+        {/* Compact Top Toolbar */}
+        <header className="h-13 bg-white border-b border-[#E2E8F0] flex items-center justify-between px-6 z-10 shadow-xs">
+          {/* Node and Hardware / Simulation Status */}
+          <div className="flex items-center space-x-3 text-xs">
+            <button className="text-gray-500 hover:text-gray-700 md:hidden">
+              <Menu className="w-4 h-4" />
+            </button>
+
             {selectedDevice?.is_demo ? (
-              <span className="flex items-center space-x-1.5 px-2.5 py-1 text-xs font-semibold rounded-full bg-[#FFF4CC] text-[#B45309] border border-[#FFB900]">
-                <Radio className="w-3.5 h-3.5 animate-pulse text-[#FFB900]" />
+              <span className="flex items-center space-x-1.5 px-2.5 py-0.5 text-[11px] font-semibold rounded-md bg-amber-50 text-amber-800 border border-amber-200">
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
                 <span>DEMO SIMULATION MODE</span>
               </span>
             ) : (
-              <span className="flex items-center space-x-1.5 px-2.5 py-1 text-xs font-semibold rounded-full bg-[#EAF8DC] text-[#2E7D32] border border-[#55B927]">
-                <Radio className="w-3.5 h-3.5 text-[#55B927]" />
+              <span className="flex items-center space-x-1.5 px-2.5 py-0.5 text-[11px] font-semibold rounded-md bg-teal-50 text-teal-800 border border-teal-200">
+                <span className="w-2 h-2 rounded-full bg-teal-500" />
                 <span>ESP32 HARDWARE LIVE</span>
               </span>
             )}
-            <span className="text-xs text-gray-500 font-mono">
-              Node: <strong className="text-gray-800">{selectedDevice?.device_id}</strong> | Status: <strong className={selectedDevice?.status === 'ONLINE' ? 'text-green-600' : 'text-amber-600'}>{selectedDevice?.status}</strong>
+
+            <div className="h-4 w-px bg-gray-200 hidden sm:block" />
+
+            <span className="text-gray-500 hidden sm:inline text-xs font-mono">
+              Node: <strong className="text-gray-900 font-semibold">{selectedDevice?.device_id || 'CALIBRA-ESP32-001'}</strong>
+            </span>
+
+            <div className="h-4 w-px bg-gray-200 hidden sm:block" />
+
+            <span className="text-xs text-gray-500 hidden sm:flex items-center space-x-1.5">
+              <span>Status:</span>
+              <span className="inline-flex items-center space-x-1 font-semibold text-xs text-emerald-700">
+                <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                <span>{selectedDevice?.status || 'ONLINE'}</span>
+              </span>
             </span>
           </div>
 
-          {/* Simulator Bar Controls */}
+          {/* Simulator Bar Controls (Aligned & Responsive) */}
           {selectedDevice?.is_demo && (
-            <div className="flex items-center space-x-3 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1">
-              <label className="text-[11px] font-medium text-gray-500">Inject Fault/Behavior:</label>
-              <select
-                value={simulationMode}
-                onChange={(e) => setSimulationMode(e.target.value)}
-                className="text-xs border border-gray-300 rounded px-2 py-0.5 bg-white text-gray-800 font-medium focus:outline-none"
-              >
-                <option value="normal">1. Normal Operation</option>
-                <option value="offset_drift">2. Gradual Offset Drift (+)</option>
-                <option value="gain_drift">3. Gain Drift Multiplier</option>
-                <option value="temperature_variation">4. Temperature Shock Cycle</option>
-                <option value="humidity_variation">5. Humidity Deviation Cycle</option>
-                <option value="sudden_fault">6. Sudden Diaphragm Fault</option>
-                <option value="noisy_sensor">7. High Noise / Jitter</option>
-                <option value="wifi_disconnection">8. Wi-Fi Disconnection</option>
-                <option value="successful_calibration">9. Successful Calibration State</option>
-                <option value="failed_calibration">10. Failed / Unstable Calibration</option>
-              </select>
+            <div className="flex items-center space-x-2.5">
+              <div className="flex items-center space-x-2 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1">
+                <label className="text-[11px] font-medium text-gray-500 hidden md:inline">Inject Fault/Behavior:</label>
+                <select
+                  value={simulationMode}
+                  onChange={(e) => setSimulationMode(e.target.value)}
+                  className="text-xs border-0 bg-transparent text-gray-800 font-medium focus:outline-none cursor-pointer"
+                >
+                  <option value="normal">1. Normal Operation</option>
+                  <option value="offset_drift">2. Gradual Offset Drift (+)</option>
+                  <option value="gain_drift">3. Gain Drift Multiplier</option>
+                  <option value="temperature_variation">4. Temperature Shock Cycle</option>
+                  <option value="humidity_variation">5. Humidity Deviation Cycle</option>
+                  <option value="sudden_fault">6. Sudden Diaphragm Fault</option>
+                  <option value="sensor_noise">7. High Noise / Jitter</option>
+                  <option value="sensor_disagreement">8. Sensor Disagreement</option>
+                  <option value="wifi_disconnection">9. Wi-Fi Disconnection</option>
+                  <option value="successful_calibration">10. Successful Calibration</option>
+                  <option value="failed_calibration">11. Failed / Unstable Calibration</option>
+                  <option value="recovery_after_rollback">12. Recovery After Rollback</option>
+                </select>
+              </div>
 
               <button
                 onClick={() => setIsSimulating(!isSimulating)}
-                className={`flex items-center space-x-1 px-2.5 py-1 text-xs font-semibold rounded ${
+                className={`flex items-center space-x-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg shadow-xs transition-colors cursor-pointer ${
                   isSimulating
-                    ? 'bg-amber-100 text-amber-800 hover:bg-amber-200'
-                    : 'bg-[#1646E8] text-white hover:bg-[#123FD5]'
+                    ? 'bg-[#2563EB] text-white hover:bg-blue-700'
+                    : 'bg-emerald-600 text-white hover:bg-emerald-700'
                 }`}
               >
-                {isSimulating ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
-                <span>{isSimulating ? 'Pause Sim' : 'Start Sim'}</span>
+                {isSimulating ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+                <span>{isSimulating ? 'Pause Sim' : 'Resume Sim'}</span>
               </button>
             </div>
           )}
         </header>
 
-        {/* Page Content */}
-        <main className="flex-1 overflow-y-auto p-6 bg-[#F7F9FC]">
+        {/* Page Content Viewport */}
+        <main className="flex-1 overflow-y-auto p-6 bg-[#F4F7FB]">
           {children}
         </main>
       </div>
