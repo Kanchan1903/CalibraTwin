@@ -1,0 +1,25 @@
+services:
+  # Backend Web API on Render
+  - type: web
+    name: calibratwin-backend
+    env: python
+    region: oregon
+    plan: free
+    rootDir: backend
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: calibratwin-db
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: MQTT_ENABLED
+        value: "false"
+
+databases:
+  - name: calibratwin-db
+    databaseName: calibratwin
+    user: calibratwin_user
+    plan: free
